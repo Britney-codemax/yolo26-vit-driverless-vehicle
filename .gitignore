@@ -1,0 +1,16 @@
+/.venv/
+/artifacts/
+/Driverless Vehicle.yolo26/
+/docs/history.json
+*.ndjson
+*.pt
+*.pth
+.env
+.env.*
+/vision_transformer/
+/yolo-VIT/
+/yolo26/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
