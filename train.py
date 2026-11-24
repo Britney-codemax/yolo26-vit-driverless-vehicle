@@ -13,10 +13,6 @@ from fusion.runtime import (ROOT, ARTIFACTS, DIAGNOSTICS, MODELS, bootstrap, env
                             local_output, metrics_dict, now, read_json, result_root, sha256, source_hash, stamp, write_json)
 
 
-class SmokeCheckpoint(Exception):
-    """End the first part of a deliberate save/resume check."""
-
-
 def add_arguments(parser):
     parser.add_argument("--data", help="Local YOLO data.yaml/.yml (images + labels), or detection NDJSON")
     parser.add_argument("--model-set", type=Path, help="Architecture collection created by the fusion Notebook")
@@ -200,16 +196,6 @@ def run(args):
         state["vit_sha256"] = transfer.get("vit", {}).get("sha256")
         state["model_config"] = model.model.yaml
         state["initial_weights"] = parent["initial_weights"] if source else str(Path(args.weights).resolve())
-        smoke_parameters = {}
-
-        def remember_branches(trainer):
-            from fusion.mamba import ResidualSS2D
-            from fusion.models import P5ResidualViT
-            for name, module in trainer.model.named_modules():
-                if isinstance(module, (ResidualSS2D, P5ResidualViT)):
-                    mixer = module.select if isinstance(module, ResidualSS2D) else module.encoder.self_attention.in_proj_weight
-                    for key, parameter in (("alpha", module.alpha), ("mixer", mixer)):
-                        smoke_parameters[name + "." + key] = (parameter, parameter.detach().clone())
 
         def record_progress(trainer):
             effective = {k: getattr(trainer.args, k) for k in params}
@@ -236,17 +222,8 @@ def run(args):
                 state["best_epoch"] = trainer.epoch + 1
                 state["best_epoch_source"] = "on_model_save: best.pt written by mAP50-95 fitness"
             record_progress(trainer)
-            if getattr(args, "smoke_checkpoint", False) and trainer.epoch == 0:
-                changes = {k: bool(torch.isfinite(p).all() and not torch.equal(p, initial))
-                           for k, (p, initial) in smoke_parameters.items()}
-                state["smoke_branch_updates"] = changes
-                if not all(changes.values()):
-                    raise RuntimeError(f"Smoke training did not update all branch parameters: {changes}")
-                raise SmokeCheckpoint()
 
         model.add_callback("on_train_start", record_progress)
-        if getattr(args, "smoke_checkpoint", False):
-            model.add_callback("on_train_start", remember_branches)
         model.add_callback("on_model_save", record_checkpoint)
         if device != "cpu":
             torch.cuda.reset_peak_memory_stats(int(device))
@@ -277,9 +254,6 @@ def run(args):
         if last_checkpoint.is_file():
             state["last_sha256"] = sha256(last_checkpoint)
         state["status"] = "completed"
-    except SmokeCheckpoint:
-        state["status"] = "interrupted"
-        state["stop_reason"] = "planned first-epoch smoke checkpoint"
     except DiagnosticComplete:
         if not diagnostic_batches:
             raise
@@ -325,10 +299,7 @@ def main(argv=None):
     parser.add_argument("--run-dir", help="New directory under training/artifacts/")
     parser.add_argument("--download-weights", choices=("yolo", "vit", "all"))
     parser.add_argument("--diagnose-batches", type=int, help="Single-model real diagnostic; stop after N batches")
-    parser.add_argument("--smoke-checkpoint", action="store_true", help="Stop after epoch 1 of a 2-epoch save/resume check")
     args = parser.parse_args(argv)
-    if args.smoke_checkpoint and (args.epochs != 2 or args.resume or args.check or args.diagnose_batches):
-        parser.error("--smoke-checkpoint requires a fresh --epochs 2 run")
     if args.download_weights and (args.data or args.check or args.resume):
         parser.error("Downloading weights is a separate action; omit --data/--check")
     if not args.download_weights and not args.data:

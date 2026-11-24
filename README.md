@@ -3,7 +3,7 @@
 ## 使用步骤
 
 1. **创建模型。** 在仓库根目录打开 [模型融合.ipynb](模型融合.ipynb)，选择项目的 Python 内核，从头运行。五组模型的网络结构写入 [models/fusion.yaml](models/fusion.yaml)。
-2. **运行训练。** 在仓库根目录的 PowerShell 中执行下方命令。只训练 P5 Mamba 时，把 `all` 换成 `fit --model p5_mamba`。
+2. **运行训练。** 在仓库根目录的 PowerShell 中执行下方命令。`all` 从 YOLO26s 基线开始，首轮依次训练五组模型，每组 100 轮。只训练 P5 Mamba 时，把 `all` 换成 `fit --model p5_mamba`。
 3. **查看结果。** 每组正式训练完成后，最佳和末轮权重归入 `models/<模型名>/`，整体及分类 mAP 写入 [training/实验结果汇总.xlsx](training/实验结果汇总.xlsx)。原始训练日志和续训检查点在 `training/artifacts/studies/`。
 
 ```powershell

@@ -19,24 +19,6 @@ def train_cli(data, *options):
                    cwd=PROJECT, check=True)
 
 
-def smoke(data, folder, device):
-    for model in STUDY_MODELS:
-        root = folder / "smoke" / model
-        source, resumed = root / "checkpoint", root / "resumed"
-        if (resumed / "metrics.json").is_file() and read_json(resumed / "run.json")["status"] == "completed":
-            continue
-        if not (source / "run.json").is_file():
-            train_cli(data, "--model", model, "--seed", 0, "--device", device, "--imgsz", 640,
-                      "--epochs", 2, "--patience", 0, "--batch", 4, "--run-dir", source, "--smoke-checkpoint")
-        record = read_json(source / "run.json")
-        if record.get("stop_reason") != "planned first-epoch smoke checkpoint":
-            raise RuntimeError(f"短训未生成可恢复的第一轮检查点，见 {source}")
-        train_cli(data, "--resume", source / "weights/last.pt", "--run-dir", resumed)
-        record = read_json(resumed / "run.json")
-        if record["status"] != "completed" or record["completed_epochs"] != 2:
-            raise RuntimeError(f"短训恢复未完成：{resumed}")
-
-
 def completed(slot):
     runs = []
     for path in slot.glob("*/run.json"):
@@ -83,7 +65,7 @@ def choose(groups):
 
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("stage", choices=("inspect","smoke","fit","screen","repeat","test","all","report","resume"))
+    p.add_argument("stage", choices=("inspect","fit","screen","repeat","test","all","report","resume"))
     p.add_argument("--data", help="本地新版 YOLO YAML（当前复核版使用 training/configs/study-data.yaml）")
     p.add_argument("--device", default="0")
     p.add_argument("--model", choices=STUDY_MODELS, default="p5_mamba")
@@ -112,10 +94,6 @@ def main(argv=None):
     key = fingerprint({"code": source_hash(), "environment": environment(args.device),
                        "weights": sha256(weights), "model_set": sha256(MODEL_SET)})
     campaign = folder / "runs" / key
-    if args.stage in ("smoke","all"):
-        smoke(data, folder / "preflight" / key, args.device)
-        if args.stage == "smoke":
-            return
     if args.stage == "resume":
         if not args.checkpoint:
             p.error("请指定 --checkpoint 指向本轮未完成运行的 weights/last.pt")
