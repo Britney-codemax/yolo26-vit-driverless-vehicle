@@ -1,4 +1,4 @@
-"""Native Ultralytics models with one serializable P5 residual branch."""
+"""Native YOLO26s with serializable residual branches at P4 and P5."""
 from copy import deepcopy
 from pathlib import Path
 import torch
@@ -10,6 +10,7 @@ from ultralytics.nn.modules import C2PSA
 from ultralytics.nn.tasks import DetectionModel, yaml_model_load
 from ultralytics.utils.torch_utils import init_seeds
 from .runtime import ROOT, MODELS, sha256
+from .mamba import ResidualSS2D
 
 SPECS = yaml.safe_load((ROOT / "configs/models.yaml").read_text(encoding="utf-8"))
 
@@ -55,9 +56,13 @@ class FusionDetectionModel(DetectionModel):
         if not self.end2end or self.model[-1].reg_max != 1:
             raise ValueError("Expected YOLO26 end-to-end detection")
         self.variant = variant
-        if variant != "baseline":
-            spec = SPECS[variant]
+        spec = cfg.get("fusion_spec", SPECS[variant])
+        if spec.get("dim"):
             self.model[10] = P5ResidualViT(self.model[10], spec["dim"], spec["heads"])
+        if "scan_layer" in spec:
+            index = spec["scan_layer"]
+            self.model[index] = ResidualSS2D(self.model[index], {10: 512, 13: 256}[index],
+                                             spec["width"], spec["state_size"])
         self.yaml["fusion_variant"] = variant
         self.transfer = None
 
@@ -65,12 +70,15 @@ class FusionDetectionModel(DetectionModel):
         source = weights["model"] if isinstance(weights, dict) else weights
         state = source.float().state_dict()
         target = self.state_dict()
-        wrapped_source = isinstance(source.model[10], P5ResidualViT)
+        wrappers = (P5ResidualViT, ResidualSS2D)
+        wrapped_source = tuple(f"model.{i}." for i in (10, 13) if isinstance(source.model[i], wrappers))
+        if wrapped_source and getattr(source, "variant", None) != self.variant:
+            raise ValueError("Checkpoint variant differs from the requested fusion model")
         loaded, unmatched, used, mapping = {}, {}, set(), {}
         for key, value in target.items():
             source_key = key
-            if not wrapped_source and key.startswith("model.10.base."):
-                source_key = key.replace("model.10.base.", "model.10.", 1)
+            if not wrapped_source and key.startswith(("model.10.base.", "model.13.base.")):
+                source_key = key.replace(".base.", ".", 1)
             if source_key in state and value.shape == state[source_key].shape:
                 loaded[key] = state[source_key]
                 used.add(source_key)
@@ -82,10 +90,8 @@ class FusionDetectionModel(DetectionModel):
         self.transfer = {"loaded": mapping, "unmatched": unmatched, "unused_source": sorted(set(state) - used),
                          "matched_tensors": len(loaded), "target_tensors": len(target)}
         if wrapped_source:
-            if getattr(source, "variant", None) != self.variant:
-                raise ValueError("Checkpoint variant differs from the requested fusion model")
             for key in target:
-                if key.startswith("model.10.") and ".base." not in key:
+                if key.startswith(wrapped_source) and ".base." not in key:
                     if key not in loaded or not torch.equal(target[key], state[key]):
                         raise RuntimeError(f"Fusion parameters lost during rebuild: {key}")
         return self
@@ -110,18 +116,21 @@ def load_vit_block(detector, path):
 
 
 def make_detector(cfg, nc=None, weights=None):
-    init_seeds(int(cfg.get("fusion_seed", 0)), deterministic=True)
+    init_seeds(int(cfg.get("fusion_seed", 0)), deterministic=cfg.get("fusion_deterministic", True))
     model = FusionDetectionModel(cfg, nc=nc)
     if weights is not None:
         model.load(weights, verbose=False)
     return model
 
 
-def build_model(variant, seed=0, yolo_weights=None, vit_weights=None, check=False):
+def build_model(variant, seed=0, yolo_weights=None, vit_weights=None, check=False, deterministic=True,
+                architecture=None):
     if variant not in MODELS:
         raise ValueError(variant)
-    cfg = yaml_model_load("yolo26s.yaml")
-    cfg.update(fusion_variant=variant, fusion_seed=seed)
+    cfg = deepcopy(architecture) if architecture is not None else yaml_model_load("yolo26s.yaml")
+    if architecture is not None and cfg.get("fusion_variant") != variant:
+        raise ValueError("Notebook architecture and requested model differ")
+    cfg.update(fusion_variant=variant, fusion_seed=seed, fusion_deterministic=deterministic)
     # Constructing from YAML never downloads weights.
     wrapper = YOLO("yolo26s.yaml", task="detect", verbose=False)
     wrapper.model = make_detector(cfg)

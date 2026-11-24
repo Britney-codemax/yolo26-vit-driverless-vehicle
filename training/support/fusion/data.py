@@ -1,5 +1,6 @@
 """Local YOLO/NDJSON detection validation and short-name caching."""
 import asyncio
+import csv
 import hashlib
 import json
 import math
@@ -9,7 +10,7 @@ from urllib.parse import urlsplit, urlunsplit
 import aiohttp
 from PIL import Image
 import yaml
-from .runtime import ARTIFACTS, fingerprint, sha256
+from .runtime import ARTIFACTS, LEGACY_CONTENT, ROOT, fingerprint, sha256
 
 
 def read_yolo(path):
@@ -28,6 +29,16 @@ def read_yolo(path):
     rows = [{"type": "dataset", "task": "detect", "class_names": names,
              "local_root": str(root), "source": source}]
     identities = {}
+    exclusions = {}
+    if config.get("train_exclusions"):
+        manifest = (path.parent / config["train_exclusions"]).resolve()
+        with manifest.open(encoding="utf-8-sig", newline="") as stream:
+            for pair in csv.DictReader(stream):
+                ref = (root / pair["validation_image"]).resolve()
+                if not ref.is_relative_to(root) or sha256(ref) != pair["validation_sha256"]:
+                    raise ValueError("Validation image differs from the duplicate audit")
+                exclusions[pair["train_image"]] = pair["train_sha256"]
+    excluded = set()
     extensions = {".bmp", ".dng", ".jpeg", ".jpg", ".mpo", ".png", ".tif", ".tiff", ".webp", ".pfm", ".heic"}
     for split in ("train", "val", "test"):
         value = config.get(split)
@@ -60,6 +71,12 @@ def read_yolo(path):
             if not label.is_file():
                 raise FileNotFoundError(f"Missing label file: {label.relative_to(root)}; negatives require an empty .txt")
             expected_labels.add(label)
+            relative = image.relative_to(root).as_posix()
+            if split == "train" and relative in exclusions:
+                if sha256(image) != exclusions[relative]:
+                    raise ValueError(f"Training image differs from the duplicate audit: {relative}")
+                excluded.add(relative)
+                continue
             verify_image(image)
             digest = sha256(image)
             if digest in identities and identities[digest] != split:
@@ -82,6 +99,10 @@ def read_yolo(path):
                          "label_sha256": hashlib.sha256(label_bytes).hexdigest()})
         if set(labels.rglob("*.txt")) - expected_labels:
             raise ValueError(f"Orphan label files in {split}")
+    if excluded != set(exclusions):
+        raise ValueError("Missing training images from the duplicate audit")
+    if excluded:
+        rows[0]["verified_train_exclusions"] = sorted(excluded)
     return rows
 
 
@@ -158,7 +179,51 @@ def read_data(path, required=("train", "val")):
                   "warnings": warnings}
     if is_yolo:
         info["source"] = rows[0]["source"]
+        info["content_sha256"] = fingerprint({"names": names, "files": sorted(
+            (r["split"], r["image_sha256"], r["label_sha256"]) for r in rows[1:])})
+        if (path == (ROOT / "dataset/data.yaml").resolve()
+                and info["content_sha256"] == "ff73b4fe89effd9779f71bea0881c682b33f278b4f89736101deffb242cf8a78"):
+            return read_data(ROOT / "configs/study-data.yaml", required)
+        if info["content_sha256"] != LEGACY_CONTENT:
+            info["sha256"] = fingerprint({"names": names, "images": rows[1:]})
+        if rows[0].get("verified_train_exclusions"):
+            info["verified_train_exclusions"] = rows[0]["verified_train_exclusions"]
+            info["warnings"] = [w for w in warnings if not w.startswith("Source-group")]
+            info["warnings"].append("Known train/val duplicate pairs excluded from training; source groups not verified")
     return rows, info
+
+
+def inspect_study(path, manifest_root=None):
+    if not path or not Path(path).is_file() or Path(path).suffix.lower() not in (".yaml", ".yml"):
+        raise ValueError("请先设置新版数据集的本地 DATA_YAML（YOLO .yaml/.yml）。")
+    rows, info = read_data(path)
+    if info["content_sha256"] == LEGACY_CONTENT:
+        raise ValueError("这是历史 v3 数据，请提供新版 DATA_YAML。")
+    names = {k: v.strip().upper() for k, v in info["names"].items()}
+    if len(names) != 2 or set(names.values()) != {"UGV", "USV"}:
+        raise ValueError(f"期望 UGV 和 USV 两个类别，实际为 {info['names']}。")
+    sizes = {split: {name: dict(small=0, medium=0, large=0) for name in names.values()}
+             for split in info["counts"]}
+    root = Path(rows[0]["local_root"])
+    for row in rows[1:]:
+        with Image.open(root / row["file"]) as image:
+            w, h = image.size
+        scale = 640 / max(w, h)
+        for cls, _, _, bw, bh in row["annotations"]["boxes"]:
+            area = bw * w * bh * h * scale ** 2
+            bucket = "small" if area < 32 ** 2 else "medium" if area < 96 ** 2 else "large"
+            sizes[row["split"]][names[int(cls)]][bucket] += 1
+    info["box_sizes_long_edge_640"] = sizes
+    info.pop("source", None)
+    info["public_dataset_url"] = ""
+    if manifest_root:
+        folder = Path(manifest_root) / info["sha256"]
+        folder.mkdir(parents=True, exist_ok=True)
+        for split, counts in info["counts"].items():
+            if counts["images"]:
+                paths = [row["file"] for row in rows[1:] if row["split"] == split]
+                (folder / f"{split}.txt").write_text("\n".join(paths) + "\n", encoding="utf-8")
+    return info
 
 
 def inspect_data(path, required=("train", "val")):

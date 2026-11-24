@@ -1,7 +1,9 @@
-/.venv/
-/artifacts/
+/.venv*/
+/training/artifacts/
+/training/dataset/
+.ipynb_checkpoints/
 /Driverless Vehicle.yolo26/
-/docs/history.json
+/training/Driverless Vehicle.yolo26/
 *.ndjson
 *.pt
 *.pth

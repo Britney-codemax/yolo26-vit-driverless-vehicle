@@ -2,8 +2,8 @@
 import argparse
 import asyncio
 from pathlib import Path
-from fusion.runtime import (ARTIFACTS, EVALUATIONS, bootstrap, environment, fingerprint, local_output,
-                            metrics_dict, now, sha256, source_hash, stamp, write_json)
+from fusion.runtime import (ARTIFACTS, bootstrap, environment, fingerprint, local_output,
+                            metrics_dict, now, sha256, source_hash, stamp, write_json, result_root)
 
 
 def evaluation_settings(imgsz=640, batch=4, device="0", split="val"):
@@ -14,12 +14,12 @@ def evaluation_settings(imgsz=640, batch=4, device="0", split="val"):
 
 def evaluate_checkpoint(checkpoint, data_yaml, destination, settings, expected_names):
     from fusion.models import load_model
-    from fusion.engine import CompleteValidator
+    from fusion.engine import StudyValidator
     model = load_model(checkpoint)
     if dict(model.names) != expected_names:
         raise ValueError("Checkpoint class IDs/names differ from the dataset")
     model.eval()
-    metrics = model.val(data=str(data_yaml), validator=CompleteValidator,
+    metrics = model.val(data=str(data_yaml), validator=StudyValidator,
                         project=str(destination.parent), name=destination.name, exist_ok=True, **settings)
     return {**metrics_dict(metrics), "split": settings["split"], "settings": settings,
             "checkpoint_sha256": sha256(checkpoint)}
@@ -45,7 +45,7 @@ def main(argv=None):
     from fusion.records import refresh_safely
     data = inspect_data(args.data, required=(args.split,))
     settings = evaluation_settings(args.imgsz, args.batch, args.device, args.split)
-    directory = local_output(EVALUATIONS / stamp())
+    directory = local_output(result_root(data, "evaluations") / stamp())
     directory.mkdir(parents=True, exist_ok=False)
     probe = load_model(checkpoint)
     variant = getattr(probe.model, "variant", "external")
@@ -53,6 +53,8 @@ def main(argv=None):
     state = {"id": directory.relative_to(ARTIFACTS).as_posix(), "kind": "evaluation", "model": variant, "seed": None,
              "data": data, "settings": settings, "environment": environment(args.device), "code_sha256": source_hash(),
              "checkpoint_sha256": sha256(checkpoint), "status": "running", "started_utc": now()}
+    if checkpoint.is_relative_to(ARTIFACTS.parent):
+        state["weight_path"] = checkpoint.relative_to(ARTIFACTS.parent).as_posix()
     state["protocol_key"] = fingerprint({k: state[k] for k in ("data", "settings", "environment", "code_sha256")})
     write_json(directory / "run.json", state)
     try:
@@ -68,7 +70,7 @@ def main(argv=None):
     finally:
         state["finished_utc"] = now()
         write_json(directory / "run.json", state)
-        refresh_safely()
+        refresh_safely(directory)
 
 
 if __name__ == "__main__":

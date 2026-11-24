@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from fusion.runtime import ROOT, ARTIFACTS, MODELS, METRICS, bootstrap, environment, read_json, stamp, write_json
+from fusion.runtime import ROOT, ARTIFACTS, LEGACY_MODELS as MODELS, METRICS, bootstrap, environment, read_json, stamp, write_json
 
 bootstrap()
 import torch
@@ -183,7 +183,7 @@ m=load_model(sys.argv[1]).model.eval()
 with torch.no_grad(): y=m(torch.zeros(1,3,64,96))[0]
 torch.save(y,sys.argv[2])
 """
-            subprocess.run([sys.executable, "-B", "-c", code, str(checkpoint), str(child_output)], cwd=ROOT, check=True)
+            subprocess.run([sys.executable, "-B", "-c", code, str(checkpoint), str(child_output)], cwd=ROOT / "support", check=True)
             torch.testing.assert_close(torch.load(child_output, weights_only=True), expected)
         self.done("four variants: mapped YOLO tensors, two-class positive/empty losses, finite gradients, fresh-process reload parity")
 
@@ -287,7 +287,8 @@ torch.save(y,sys.argv[2])
         self.assertEqual(set(metrics["per_class"]), {"UGV", "USV"})
         self.assertTrue(all(v is not None for v in metrics["overall"].values()))
         from evaluate import main as evaluate_main
-        with patch("fusion.records.refresh_safely"), patch("evaluate.EVALUATIONS", self.root / "evaluations"):
+        self.assertEqual(metrics["negative_images"]["images"], 1)
+        with patch("fusion.records.refresh_safely"), patch("evaluate.result_root", return_value=self.root / "evaluations"):
             evaluate_main(["--weights", str(checkpoint), "--data", str(data), "--split", "test",
                            "--device", "cpu", "--batch", "2", "--imgsz", "64"])
         saved = list((self.root / "evaluations").glob("*/run.json"))
@@ -350,15 +351,22 @@ torch.save(y,sys.argv[2])
         def fake_train(**kwargs):
             flags["train"] = True
             self.assertEqual(kwargs["data"], str(data.resolve()))
-            self.assertIs(kwargs["trainer"], FusionTrainer)
+            self.assertEqual(kwargs["save_dir"], str(directory))
+            from fusion.diagnostics import DiagnosticTrainer
+            self.assertIs(kwargs["trainer"].func, DiagnosticTrainer)
+            self.assertIsNone(kwargs["trainer"].keywords["batch_limit"])
             effective = train.configuration(args)
             trainer = SimpleNamespace(args=SimpleNamespace(**effective, data="synthetic.yaml"), amp=False, model=net,
-                                      epoch=0, fitness=.2, best_fitness=.2)
+                                      epoch=0, fitness=.2, best_fitness=.2,
+                                      test_loader=SimpleNamespace(batch_size=2), validator=SimpleNamespace(seen=2))
             fake.trainer = trainer
+            torch.use_deterministic_algorithms(True, warn_only=True)
             callbacks["on_train_start"](trainer)
             callbacks["on_model_save"](trainer)
             trainer.epoch = 2; trainer.fitness = .1
             callbacks["on_model_save"](trainer)
+            flags["training_protocol"] = read_json(directory / "run.json")["protocol_key"]
+            torch.use_deterministic_algorithms(False)
             (directory / "weights").mkdir()
             (directory / "weights/best.pt").write_bytes(b"synthetic checkpoint placeholder")
         fake.train = fake_train
@@ -376,6 +384,8 @@ torch.save(y,sys.argv[2])
         self.assertEqual(state["id"], directory.relative_to(ARTIFACTS).as_posix())
         self.assertIsNone(state["environment"]["gpu"])
         self.assertIn("warn_only", state["determinism"])
+        self.assertTrue(state["determinism"]["enabled"])
+        self.assertEqual(state["protocol_key"], flags["training_protocol"])
         self.assertEqual(state["best_epoch"], 1)
         self.assertEqual(state["completed_epochs"], 3)
         self.assertEqual(read_json(directory / "metrics.json")["overall"]["map50"], .4)
@@ -400,10 +410,10 @@ torch.save(y,sys.argv[2])
                 run_experiments.main(["--models", "baseline", "p5_vit_small", "--seeds", "0", "1", "--data", str(data),
                                       "--weights", str(self.weights)])
         self.assertEqual(raised.exception.code, 1)
-        self.assertEqual(len(commands), 4)
+        self.assertEqual(len(commands), 1)
         plan = read_json(batch / "plan.json")["entries"]
         self.assertEqual(plan[0]["status"], "failed")
-        self.assertTrue(all(p["status"] == "process_succeeded" for p in plan[1:]))
+        self.assertTrue(all(p["status"] == "not_run" for p in plan[1:]))
         self.assertEqual(len({p["id"] for p in plan}), 4)
         self.assertTrue(all("--run-dir" in command and "--seed" in command for command in commands))
         self.assertTrue(all(command[command.index("--data") + 1] == str(data.resolve()) for command in commands))
@@ -412,7 +422,7 @@ torch.save(y,sys.argv[2])
                 run_experiments.main(["--models", "p5_vit_pretrained", "--data", str(data), "--weights", str(self.weights),
                                       "--vit-weights", str(self.root / "missing_vit.pth")])
             child.assert_not_called()
-        self.done("serial runner: shared CLI arguments, unique IDs, failure recording and continued independent runs; child processes mocked")
+        self.done("serial runner: shared CLI arguments, unique IDs, first failure stops subsequent runs; child processes mocked")
 
     def test_10_summary_excludes_old_directories(self):
         from fusion.runtime import RUNS, EVALUATIONS

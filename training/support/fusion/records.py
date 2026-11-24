@@ -125,8 +125,15 @@ def refresh(root=None, destination=None, include_evaluations=True):
     return rows, groups
 
 
-def refresh_safely():
+def refresh_safely(directory=None):
     try:
-        refresh()
+        from .runtime import STUDIES
+        if directory is not None and Path(directory).resolve().is_relative_to(STUDIES.resolve()):
+            if {"runs", "evaluations"} & set(Path(directory).relative_to(STUDIES).parts):
+                from .workbook import export_workbook
+                export_workbook()
+        else:
+            refresh()
     except Exception as exc:
-        print(f"Summary refresh failed ({type(exc).__name__}); raw run files remain available. Run compare.py after fixing it.")
+        print(f"Summary refresh failed ({type(exc).__name__}). Raw run files remain available. "
+              "Retry train.py report for the current study or training/support/compare.py for v3.")

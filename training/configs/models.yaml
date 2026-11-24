@@ -1,0 +1,33 @@
+baseline:
+  dim: 0
+  heads: 0
+  pretrained: false
+p5_vit_small:
+  dim: 256
+  heads: 4
+  pretrained: false
+p5_vit_random:
+  dim: 768
+  heads: 12
+  pretrained: false
+p5_vit_pretrained:
+  dim: 768
+  heads: 12
+  pretrained: true
+p5_mamba:
+  scan_layer: 10
+  width: 64
+  state_size: 8
+  pretrained: false
+p4_mamba:
+  scan_layer: 13
+  width: 64
+  state_size: 8
+  pretrained: false
+p4_mamba_p5_vit:
+  dim: 256
+  heads: 4
+  scan_layer: 13
+  width: 64
+  state_size: 8
+  pretrained: false

@@ -1,0 +1,6 @@
+path: ../dataset
+train: train/images
+val: valid/images
+names: [UGV, USV]
+nc: 2
+train_exclusions: verified_v4_duplicates.csv
