@@ -7,12 +7,6 @@
 2. **运行训练。** 在仓库根目录的 PowerShell 中执行下方命令。`all` 从 YOLO26s 基线开始，首轮依次训练五组模型，每组 100 轮。只训练 P5 Mamba 时，把 `all` 换成 `fit --model p5_mamba`。
 3. **查看结果。** 每组正式训练完成后，最佳和末轮权重归入 `models/<模型名>/`，整体及分类 mAP 写入 [training/实验结果汇总.xlsx](training/实验结果汇总.xlsx)。原始训练日志和续训检查点在 `training/artifacts/studies/`。
 
-## 第二轮 · 12 个融合模型
-
-在项目根目录打开 [第二轮模型融合对比.ipynb](第二轮模型融合对比.ipynb)，选择项目 Python 内核，运行全部单元格生成 12 个结构配置。A、B、C 三人各自复制最后一格对应的命令，在本机 GPU 0 上顺序训练 4 组。中断后重新运行同一条命令即可。
-
-收齐 A、B、C 的结果后，按 Notebook 倒数第二格在同一台电脑复评。原版 YOLO26s 提供 USV 门槛，第二轮 12 组与第一轮第四、第五组参加最终比较。结果写入 [实验结果汇总.xlsx](training/实验结果汇总.xlsx) 的「第二轮14组对比」。
-
 ```powershell
 & .\.venv-cuda\Scripts\python.exe train.py all --data training/configs/study-data.yaml
 ```
@@ -26,6 +20,13 @@
 ```
 
 在独立的 Python 程序中加载融合权重时，先把仓库的 `training/support` 目录加入 `sys.path`，让 PyTorch 能找到自定义的 `fusion.models` 层。
+
+## 第二轮 · 12 个融合模型
+
+在项目根目录打开 [第二轮模型融合对比.ipynb](第二轮模型融合对比.ipynb)，选择项目 Python 内核，运行全部单元格生成 12 个结构配置。A、B、C 三人各自复制最后一格对应的命令，在本机 GPU 0 上顺序训练 4 组。中断后重新运行同一条命令即可。
+
+收齐 A、B、C 的结果后，按 Notebook 倒数第二格在同一台电脑复评。原版 YOLO26s 提供 USV 门槛，第二轮 12 组与第一轮第四、第五组参加最终比较。结果写入 [实验结果汇总.xlsx](training/实验结果汇总.xlsx) 的「第二轮14组对比」。
+
 
 ## 复现与开源
 
