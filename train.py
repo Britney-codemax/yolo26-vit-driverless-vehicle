@@ -17,7 +17,7 @@ def add_arguments(parser):
     parser.add_argument("--data", help="Local YOLO data.yaml/.yml (images + labels), or detection NDJSON")
     parser.add_argument("--model-set", type=Path, help="Architecture collection created by the fusion Notebook")
     parser.add_argument("--config", default=str(ROOT / "configs/train.yaml"))
-    parser.add_argument("--weights", default=str(ARTIFACTS / "weights/yolo26s.pt"), help="Original YOLO26s COCO weights")
+    parser.add_argument("--weights", default=str(ARTIFACTS / "weights/yolo26s.pt"), help="Original COCO weights matching the selected YOLO26 scale")
     parser.add_argument("--vit-weights", default=str(ARTIFACTS / "weights/vit_b_16_imagenet1k_v1.pth"))
     for key in ("epochs", "batch", "seed", "imgsz", "patience", "workers"):
         parser.add_argument(f"--{key}", type=int)
@@ -54,21 +54,21 @@ def download_weights(which):
     from torch.hub import download_url_to_file
     destinations = {
         "yolo": ("yolo26s.pt", "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26s.pt", None),
+        "yolo26n": ("yolo26n.pt", "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26n.pt",
+                    "9b09cc8bf347f0fc8a5f7657480587f25db09b34bf33b0652110fb03a8ad4fef"),
         "vit": ("vit_b_16_imagenet1k_v1.pth", ViT_B_16_Weights.IMAGENET1K_V1.url,
                 Path(ViT_B_16_Weights.IMAGENET1K_V1.url).stem.rsplit("-", 1)[1]),
     }
-    for key in destinations if which == "all" else [which]:
+    for key in ("yolo", "vit") if which == "all" else [which]:
         name, url, hash_prefix = destinations[key]
         path = ARTIFACTS / "weights" / name
         if path.is_file():
-            print(f"Reusing {path.name}: {sha256(path)}")
+            digest = sha256(path)
+            if hash_prefix and not digest.startswith(hash_prefix):
+                raise ValueError(f"Cached weights failed SHA-256 verification: {path}")
+            print(f"Reusing {path.name}: {digest}")
             continue
-        temporary = path.with_suffix(path.suffix + ".part")
-        try:
-            download_url_to_file(url, str(temporary), hash_prefix=hash_prefix)
-            temporary.replace(path)
-        finally:
-            temporary.unlink(missing_ok=True)
+        download_url_to_file(url, str(path), hash_prefix=hash_prefix)
         write_json(path.with_suffix(".source.json"), {"url": url, "sha256": sha256(path)})
         print(f"Saved {path}")
 
@@ -297,7 +297,7 @@ def main(argv=None):
     parser.add_argument("--model", choices=MODELS, help="Default: baseline, or the saved model when resuming")
     parser.add_argument("--resume", help="Resume this project's last.pt in a new output directory; preserve original settings")
     parser.add_argument("--run-dir", help="New directory under training/artifacts/")
-    parser.add_argument("--download-weights", choices=("yolo", "vit", "all"))
+    parser.add_argument("--download-weights", choices=("yolo", "vit", "all", "yolo26n"))
     parser.add_argument("--diagnose-batches", type=int, help="Single-model real diagnostic; stop after N batches")
     args = parser.parse_args(argv)
     if args.download_weights and (args.data or args.check or args.resume):

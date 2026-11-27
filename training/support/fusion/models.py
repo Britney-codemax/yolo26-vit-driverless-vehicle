@@ -1,4 +1,4 @@
-"""Native YOLO26s with serializable residual branches at P4 and P5."""
+"""Native YOLO26n/s with serializable residual branches at P4 and P5."""
 from copy import deepcopy
 from pathlib import Path
 import torch
@@ -19,9 +19,10 @@ class P5ResidualViT(nn.Module):
     def __init__(self, base, dim, heads):
         super().__init__()
         self.base = base
-        self.input_projection = nn.Conv2d(512, dim, 1)
+        channels = base.cv2.conv.out_channels
+        self.input_projection = nn.Conv2d(channels, dim, 1)
         self.encoder = EncoderBlock(heads, dim, dim * 4, dropout=0.0, attention_dropout=0.0)
-        self.output_projection = nn.Conv2d(dim, 512, 1)
+        self.output_projection = nn.Conv2d(dim, channels, 1)
         self.alpha = nn.Parameter(torch.zeros(()))
         self.dim = dim
         # Ultralytics routes layers by these attributes, including the P5 skip connection.
@@ -51,17 +52,19 @@ class FusionDetectionModel(DetectionModel):
         if variant not in MODELS:
             raise ValueError(f"Unknown fusion variant: {variant}")
         super().__init__(cfg, ch=ch, nc=nc, verbose=verbose)
-        if not isinstance(self.model[10], C2PSA) or self.model[10].c != 256:
-            raise ValueError("Expected the fixed YOLO26s architecture at layer 10")
+        expected_hidden = {"n": 128, "s": 256}.get(cfg.get("scale", "s"))
+        if not isinstance(self.model[10], C2PSA) or self.model[10].c != expected_hidden:
+            raise ValueError("Layer 10 does not match the requested YOLO26n/s architecture")
         if not self.end2end or self.model[-1].reg_max != 1:
             raise ValueError("Expected YOLO26 end-to-end detection")
         self.variant = variant
         spec = cfg.get("fusion_spec", SPECS[variant])
+        channels = {i: self.model[i].cv2.conv.out_channels for i in (10, 13)}
         if spec.get("dim"):
             self.model[10] = P5ResidualViT(self.model[10], spec["dim"], spec["heads"])
         if "scan_layer" in spec:
             index = spec["scan_layer"]
-            self.model[index] = ResidualSS2D(self.model[index], {10: 512, 13: 256}[index],
+            self.model[index] = ResidualSS2D(self.model[index], channels[index],
                                              spec["width"], spec["state_size"])
         self.yaml["fusion_variant"] = variant
         self.transfer = None
@@ -132,16 +135,18 @@ def build_model(variant, seed=0, yolo_weights=None, vit_weights=None, check=Fals
         raise ValueError("Notebook architecture and requested model differ")
     cfg.update(fusion_variant=variant, fusion_seed=seed, fusion_deterministic=deterministic)
     # Constructing from YAML never downloads weights.
-    wrapper = YOLO("yolo26s.yaml", task="detect", verbose=False)
+    scale = cfg.get("scale", "s")
+    wrapper = YOLO(f"yolo26{scale}.yaml", task="detect", verbose=False)
     wrapper.model = make_detector(cfg)
     reports = {}
     if not check:
         path = Path(yolo_weights).resolve()
         if not path.is_file():
-            raise FileNotFoundError("YOLO weights missing; run train.py --download-weights yolo explicitly")
+            raise FileNotFoundError(f"YOLO26{scale} weights missing: {path}")
         source = YOLO(str(path), task="detect", verbose=False)
-        if not isinstance(source.model.model[10], C2PSA) or source.model.model[10].c != 256 or source.model.model[-1].nc != 80:
-            raise ValueError("Initialization requires the original 80-class YOLO26s COCO checkpoint")
+        if (source.model.yaml.get("scale") != scale or not isinstance(source.model.model[10], C2PSA)
+                or source.model.model[-1].nc != 80):
+            raise ValueError(f"Initialization requires the original 80-class YOLO26{scale} COCO checkpoint")
         if not source.model.end2end or source.model.model[-1].reg_max != 1:
             raise ValueError("Initialization checkpoint is not YOLO26")
         wrapper.model.load(source.model)

@@ -26,6 +26,19 @@
 
 在独立的 Python 程序中加载融合权重时，先把仓库的 `training/support` 目录加入 `sys.path`，让 PyTorch 能找到自定义的 `fusion.models` 层。
 
+### 第五组的小型 ViT 使用 ImageNet 初始化
+
+原第五组 P4 Mamba＋P5 ViT 的验证集 mAP50 为 88.00%，mAP50–95 为 68.37%。对照实验沿用该组的网络结构、COCO 初始权重、数据划分和种子 0，只将第 10 层 ViT 编码块的 12 个张量替换为 PiT-B 的第一阶段第一块。两者均为 256 维、4 个注意力头，前馈层宽 1024。Mamba、ViT 两侧的投影和残差门控沿用原初始化。[ImageNet-1K 权重及许可](https://huggingface.co/timm/pit_b_224.in1k/tree/f46cba2050d0bb3f6faa0e5fcf5e8edda35f1436)
+
+在项目根目录运行。第一次用 `prepare` 下载并核对权重，同时验证训练器重建两类别模型时保留了全部迁移参数。`train` 启动 100 轮训练；中断后重复同一条命令即可从有效检查点接续。
+
+```powershell
+& .\.venv-cuda\Scripts\python.exe -m models.vit_imagenet prepare
+& .\.venv-cuda\Scripts\python.exe -m models.vit_imagenet train --device 0
+```
+
+本次结果单独保存在 `training/artifacts/studies/<数据指纹>/vit_imagenet/p4_mamba_p5_vit/attempt_*/`。训练结束后，程序从 `best.pt` 复评并保存 `metrics.json`。本机有原第五组的验证记录时，终端会显示 UGV、USV 和 Overall 六项指标相对原第五组的百分点差值。
+
 ## 复现与开源
 
 首次安装使用 Python 3.12。安装完成后，在 Jupyter 或 VS Code 选择项目的 `.venv-cuda` 内核。

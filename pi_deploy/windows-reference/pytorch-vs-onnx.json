@@ -1,0 +1,66 @@
+{
+  "p4_mamba": [
+    {
+      "image": "G2_bing_020_jpg.rf.29c840849ac8d44560fc7cf64f27f2b5.jpg",
+      "detections": 1,
+      "classes": [
+        0
+      ],
+      "pt_confidences": [
+        0.9604369401931763
+      ],
+      "onnx_confidences": [
+        0.9604367613792419
+      ],
+      "max_box_error_px": 0.0001220703125,
+      "max_confidence_error": 1.7881393432617188e-07
+    },
+    {
+      "image": "XOCEAN_XO-450_7fd59484_jpg.rf.53ea2ac582c08c15a2fac4431453e464.jpg",
+      "detections": 1,
+      "classes": [
+        1
+      ],
+      "pt_confidences": [
+        0.8824688792228699
+      ],
+      "onnx_confidences": [
+        0.8824667930603027
+      ],
+      "max_box_error_px": 0.0003662109375,
+      "max_confidence_error": 2.086162567138672e-06
+    }
+  ],
+  "p4_mamba_p5_vit": [
+    {
+      "image": "G2_bing_020_jpg.rf.29c840849ac8d44560fc7cf64f27f2b5.jpg",
+      "detections": 1,
+      "classes": [
+        0
+      ],
+      "pt_confidences": [
+        0.9635887742042542
+      ],
+      "onnx_confidences": [
+        0.9635887145996094
+      ],
+      "max_box_error_px": 0.0001220703125,
+      "max_confidence_error": 5.960464477539063e-08
+    },
+    {
+      "image": "XOCEAN_XO-450_7fd59484_jpg.rf.53ea2ac582c08c15a2fac4431453e464.jpg",
+      "detections": 1,
+      "classes": [
+        1
+      ],
+      "pt_confidences": [
+        0.8766841292381287
+      ],
+      "onnx_confidences": [
+        0.8766833543777466
+      ],
+      "max_box_error_px": 0.00048828125,
+      "max_confidence_error": 7.748603820800781e-07
+    }
+  ]
+}
