@@ -1,0 +1,309 @@
+F01:
+  nc: 80
+  end2end: true
+  reg_max: 1
+  scales: &id001
+    n:
+    - 0.5
+    - 0.25
+    - 1024
+    s:
+    - 0.5
+    - 0.5
+    - 1024
+    m:
+    - 0.5
+    - 1.0
+    - 512
+    l:
+    - 1.0
+    - 1.0
+    - 512
+    x:
+    - 1.0
+    - 1.5
+    - 512
+  backbone: &id002
+  - - -1
+    - 1
+    - Conv
+    - - 64
+      - 3
+      - 2
+  - - -1
+    - 1
+    - Conv
+    - - 128
+      - 3
+      - 2
+  - - -1
+    - 2
+    - C3k2
+    - - 256
+      - false
+      - 0.25
+  - - -1
+    - 1
+    - Conv
+    - - 256
+      - 3
+      - 2
+  - - -1
+    - 2
+    - C3k2
+    - - 512
+      - false
+      - 0.25
+  - - -1
+    - 1
+    - Conv
+    - - 512
+      - 3
+      - 2
+  - - -1
+    - 2
+    - C3k2
+    - - 512
+      - true
+  - - -1
+    - 1
+    - Conv
+    - - 1024
+      - 3
+      - 2
+  - - -1
+    - 2
+    - C3k2
+    - - 1024
+      - true
+  - - -1
+    - 1
+    - SPPF
+    - - 1024
+      - 5
+      - 3
+      - true
+  - - -1
+    - 2
+    - C2PSA
+    - - 1024
+  head: &id003
+  - - -1
+    - 1
+    - nn.Upsample
+    - - None
+      - 2
+      - nearest
+  - - - -1
+      - 6
+    - 1
+    - Concat
+    - - 1
+  - - -1
+    - 2
+    - C3k2
+    - - 512
+      - true
+  - - -1
+    - 1
+    - nn.Upsample
+    - - None
+      - 2
+      - nearest
+  - - - -1
+      - 4
+    - 1
+    - Concat
+    - - 1
+  - - -1
+    - 2
+    - C3k2
+    - - 256
+      - true
+  - - -1
+    - 1
+    - Conv
+    - - 256
+      - 3
+      - 2
+  - - - -1
+      - 13
+    - 1
+    - Concat
+    - - 1
+  - - -1
+    - 2
+    - C3k2
+    - - 512
+      - true
+  - - -1
+    - 1
+    - Conv
+    - - 512
+      - 3
+      - 2
+  - - - -1
+      - 10
+    - 1
+    - Concat
+    - - 1
+  - - -1
+    - 1
+    - C3k2
+    - - 1024
+      - true
+      - 0.5
+      - true
+  - - - 16
+      - 19
+      - 22
+    - 1
+    - Detect
+    - - nc
+  scale: n
+  yaml_file: yolo26n.yaml
+  fusion_variant: F01
+  fusion_spec:
+    pretrained: false
+    mamba_edge:
+    - 22
+    - 23
+    vit_edge: null
+F02:
+  nc: 80
+  end2end: true
+  reg_max: 1
+  scales: *id001
+  backbone: *id002
+  head: *id003
+  scale: n
+  yaml_file: yolo26n.yaml
+  fusion_variant: F02
+  fusion_spec:
+    pretrained: false
+    mamba_edge: null
+    vit_edge:
+    - 19
+    - 23
+F03:
+  nc: 80
+  end2end: true
+  reg_max: 1
+  scales: *id001
+  backbone: *id002
+  head: *id003
+  scale: n
+  yaml_file: yolo26n.yaml
+  fusion_variant: F03
+  fusion_spec:
+    pretrained: false
+    mamba_edge:
+    - 22
+    - 23
+    vit_edge:
+    - 19
+    - 23
+F04:
+  nc: 80
+  end2end: true
+  reg_max: 1
+  scales: *id001
+  backbone: *id002
+  head: *id003
+  scale: n
+  yaml_file: yolo26n.yaml
+  fusion_variant: F04
+  fusion_spec:
+    pretrained: false
+    mamba_edge:
+    - 10
+    - 21
+    vit_edge: null
+F05:
+  nc: 80
+  end2end: true
+  reg_max: 1
+  scales: *id001
+  backbone: *id002
+  head: *id003
+  scale: n
+  yaml_file: yolo26n.yaml
+  fusion_variant: F05
+  fusion_spec:
+    pretrained: false
+    mamba_edge: null
+    vit_edge:
+    - 13
+    - 18
+F06:
+  nc: 80
+  end2end: true
+  reg_max: 1
+  scales: *id001
+  backbone: *id002
+  head: *id003
+  scale: n
+  yaml_file: yolo26n.yaml
+  fusion_variant: F06
+  fusion_spec:
+    pretrained: false
+    mamba_edge:
+    - 10
+    - 21
+    vit_edge:
+    - 13
+    - 18
+F07:
+  nc: 80
+  end2end: true
+  reg_max: 1
+  scales: *id001
+  backbone: *id002
+  head: *id003
+  scale: n
+  yaml_file: yolo26n.yaml
+  fusion_variant: F07
+  fusion_spec:
+    pretrained: false
+    mamba_edge:
+    - 22
+    - 23
+    vit_edge:
+    - 13
+    - 18
+F08:
+  nc: 80
+  end2end: true
+  reg_max: 1
+  scales: *id001
+  backbone: *id002
+  head: *id003
+  scale: n
+  yaml_file: yolo26n.yaml
+  fusion_variant: F08
+  fusion_spec:
+    pretrained: false
+    mamba_edge:
+    - 10
+    - 21
+    vit_edge:
+    - 19
+    - 23
+F09:
+  nc: 80
+  end2end: true
+  reg_max: 1
+  scales: *id001
+  backbone: *id002
+  head: *id003
+  scale: n
+  yaml_file: yolo26n.yaml
+  fusion_variant: F09
+  fusion_spec:
+    pretrained: false
+    mamba_edge: null
+    vit_edge:
+    - 10
+    - 10
+    dim: 128
+    heads: 4
